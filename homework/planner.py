@@ -19,11 +19,25 @@ class Planner(torch.nn.Module):
       super().__init__()
 
       layers = []
-      layers.append(torch.nn.Conv2d(3,16,5,2,2))
+      layers.append(torch.nn.Conv2d(3, 16, 5, stride=2, padding=2))
       layers.append(torch.nn.ReLU())
-      layers.append(torch.nn.Conv2d(16,1,1,1))
+      layers.append(torch.nn.BatchNorm2d(16))
+      layers.append(torch.nn.Conv2d(16, 32, 3, stride=2, padding=1))
+      layers.append(torch.nn.ReLU())
+      layers.append(torch.nn.BatchNorm2d(32))
+      layers.append(torch.nn.Conv2d(32, 64, 3, stride=2, padding=1))
+      layers.append(torch.nn.ReLU())
+      layers.append(torch.nn.BatchNorm2d(64))
+      layers.append(torch.nn.MaxPool2d(2, 2))  # Down-sample further
 
       self._conv = torch.nn.Sequential(*layers)
+
+      # Fully Connected Layers
+      self._fc = torch.nn.Sequential(
+      torch.nn.Linear(64 * 6 * 8, 128),  # Adjust dimensions based on input size
+      torch.nn.ReLU(),
+      torch.nn.Linear(128, 2)  # Predict 2D coordinates
+      )
 
 
 
@@ -37,7 +51,9 @@ class Planner(torch.nn.Module):
         x = self._conv(img)
         #print(img.shape)
         #print(x.shape)
-        return spatial_argmax(x[:, 0])
+        x = torch.flatten(x, 1)
+        return self._fc(x)
+        # return spatial_argmax(x[:, 0])
         # return self.classifier(x.mean(dim=[-2, -1]))
 
 

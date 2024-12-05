@@ -18,7 +18,8 @@ def train(args):
     """
     import torch
 
-    device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
+    # device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') #to try to use my gpu instead
 	
     print("device:", device)
     model = model.to(device)
