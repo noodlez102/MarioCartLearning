@@ -23,7 +23,7 @@ class Planner(torch.nn.Module):
         layers.append(torch.nn.MaxPool2d(kernel_size=2, stride=2))  
         layers.append(torch.nn.Conv2d(16, 32, 3, stride=2, padding=1))
         layers.append(torch.nn.ReLU())
-        layers.append(torch.nn.MaxPool2d(kernel_size=2, stride=2))  
+        layers.append(torch.nn.AvgPool2d(kernel_size=2, stride=2))  
         layers.append(torch.nn.Conv2d(32, 64, 3, stride=2, padding=1))
         layers.append(torch.nn.ReLU())
         layers.append(torch.nn.MaxPool2d(kernel_size=2, stride=2))  
