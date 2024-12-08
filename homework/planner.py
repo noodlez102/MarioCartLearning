@@ -14,31 +14,31 @@ def spatial_argmax(logit):
 
 
 class Planner(torch.nn.Module):
-    def __init__(self):
-
-      super().__init__()
-
-      layers = []
-      layers.append(torch.nn.Conv2d(3,16,5,2,2))
-      layers.append(torch.nn.ReLU())
-      layers.append(torch.nn.Conv2d(16,1,1,1))
-
-      self._conv = torch.nn.Sequential(*layers)
-
-
-
-    def forward(self, img):
+    def __init__(self, num_agents=1):
         """
-        Your code here
-        Predict the aim point in image coordinate, given the supertuxkart image
-        @img: (B,3,96,128)
-        return (B,2)
+        Initializes the planner. In multi-agent systems, num_agents will correspond
+        to the number of agents being handled at a time in each forward pass.
         """
-        x = self._conv(img)
-        #print(img.shape)
-        #print(x.shape)
-        return spatial_argmax(x[:, 0])
-        # return self.classifier(x.mean(dim=[-2, -1]))
+        super().__init__()
+
+        self.num_agents = num_agents  # Number of agents to handle at once
+
+        layers = []
+        layers.append(torch.nn.Conv2d(3, 16, 5, 2, 2))
+        layers.append(torch.nn.ReLU())
+        layers.append(torch.nn.Conv2d(16, 1, 1, 1))
+
+        self._conv = torch.nn.Sequential(*layers)
+
+    def forward(self, imgs):
+        """
+        Predict the aim point in image coordinate, given the supertuxkart images.
+        @imgs: (B, 3, 96, 128) where B is the batch size (number of agents)
+        return: (B, 2) - the predicted coordinates for each agent
+        """
+        # Ensure that the input is batch-wise for multiple agents
+        x = self._conv(imgs)
+        return spatial_argmax(x[:, 0])  # Apply spatial soft-argmax across the batch
 
 
 def save_model(model):
@@ -52,7 +52,7 @@ def save_model(model):
 def load_model():
     from torch import load
     from os import path
-    r = Planner()
+    r = Planner()  # Instantiate with default 1-agent setup
     r.load_state_dict(load(path.join(path.dirname(path.abspath(__file__)), 'planner.th'), map_location='cpu'))
     return r
 
@@ -62,7 +62,6 @@ if __name__ == '__main__':
     from utils import PyTux
     from argparse import ArgumentParser
 
-
     def test_planner(args):
         # Load model
         planner = load_model().eval()
@@ -71,7 +70,6 @@ if __name__ == '__main__':
             steps, how_far = pytux.rollout(t, control, planner=planner, max_frames=1000, verbose=args.verbose)
             print(steps, how_far)
         pytux.close()
-
 
     parser = ArgumentParser("Test the planner")
     parser.add_argument('track', nargs='+')
