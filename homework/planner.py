@@ -17,13 +17,17 @@ class Planner(torch.nn.Module):
     def __init__(self):
 
       super().__init__()
-
-      layers = []
-      layers.append(torch.nn.Conv2d(3,16,5,2,2))
-      layers.append(torch.nn.ReLU())
-      layers.append(torch.nn.Conv2d(16,1,1,1))
-
-      self._conv = torch.nn.Sequential(*layers)
+      import torchvision.models as models
+      resnet = models.resnet18(pretrained=True)
+      self.backbone = torch.nn.Sequential(*list(resnet.children())[:-2])  # Remove FC layers
+        
+        # Custom head
+      self.head = torch.nn.Sequential(
+          torch.nn.Flatten(),
+          torch.nn.Linear(512, 128),  # ResNet-18 outputs 512 feature maps
+          torch.nn.ReLU(),
+          torch.nn.Linear(128, 2)  # Predict (x, y) coordinates
+      )
 
 
 
@@ -34,10 +38,15 @@ class Planner(torch.nn.Module):
         @img: (B,3,96,128)
         return (B,2)
         """
-        x = self._conv(img)
-        #print(img.shape)
-        #print(x.shape)
-        return spatial_argmax(x[:, 0])
+        x = self.backbone(img)
+        return self.head(x.mean(dim=[2, 3]))  # Global average pooling
+
+        # x = self._conv(img)
+        # #print(img.shape)
+        # #print(x.shape)
+        # x = torch.flatten(x, 1)
+        # return self._fc(x)
+        # return spatial_argmax(x[:, 0])
         # return self.classifier(x.mean(dim=[-2, -1]))
 
 

@@ -18,10 +18,11 @@ def train(args):
     """
     import torch
 
-    device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
+    # Updated device selection for NVIDIA GPU
+    device = torch.device('cuda')
 	
-    print("device:", device)
-    model = model.to(device)
+    print("Using device:", device)
+    model = model.to(device)  # Move the model to the selected device
     if args.continue_training:
         model.load_state_dict(torch.load(path.join(path.dirname(path.abspath(__file__)), 'planner.th')))
 
@@ -38,29 +39,34 @@ def train(args):
         model.train()
         losses = []
         for img, label in train_data:
+            # Move data and labels to the selected device (GPU)
             img, label = img.to(device), label.to(device)
 
+            # Forward pass
             pred = model(img)
             loss_val = loss(pred, label)
 
+            # Log training data
             if train_logger is not None:
                 train_logger.add_scalar('loss', loss_val, global_step)
                 if global_step % 100 == 0:
                     log(train_logger, img, label, pred, global_step)
 
+            # Backward pass and optimization
             optimizer.zero_grad()
             loss_val.backward()
             optimizer.step()
             global_step += 1
             
+            # Store losses
             losses.append(loss_val.detach().cpu().numpy())
         
         avg_loss = np.mean(losses)
         if train_logger is None:
             print('epoch %-3d \t loss = %0.3f' % (epoch, avg_loss))
-        save_model(model)
+        save_model(model)  # Save model at the end of each epoch
 
-    save_model(model)
+    save_model(model)  # Save the final model
 
 def log(logger, img, label, pred, global_step):
     """
@@ -97,4 +103,3 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     train(args)
-
