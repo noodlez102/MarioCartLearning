@@ -4,6 +4,7 @@ import pystk
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms.functional as TF
 import dense_transforms
+from controller import control
 
 RESCUE_TIMEOUT = 30
 TRACK_OFFSET = 15
@@ -67,6 +68,50 @@ class PyTux:
     def _to_image(x, proj, view):
         p = proj @ view @ np.array(list(x) + [1])
         return np.clip(np.array([p[0] / p[-1], -p[1] / p[-1]]), -1, 1)
+    
+    def get_state(self):
+        """
+        Extract the current state of the kart.
+        Returns a tuple of features (distance_to_center, velocity, angle_to_aim_point).
+        """
+        state = pystk.WorldState()
+        state.update()
+
+        kart = state.players[0].kart
+        track = pystk.Track()
+        track.update()  # Ensure the track data is updated
+
+        # Kart's location
+        kart_location = np.array(kart.location)
+
+        # Check if track.path_nodes is populated
+        if len(track.path_nodes) == 0:
+            raise ValueError("track.path_nodes is empty. Ensure that the track is properly updated.")
+
+        # Convert path_nodes to a NumPy array
+        path_nodes = np.array(track.path_nodes)
+
+        # Distance to center of the track
+        path_distances = np.linalg.norm(path_nodes - kart_location, axis=1)
+        closest_node_idx = np.argmin(path_distances)
+        closest_node = path_nodes[closest_node_idx]
+        distance_to_center = np.linalg.norm(kart_location - closest_node)
+
+        # Velocity (magnitude)
+        velocity = np.linalg.norm(kart.velocity)
+
+        # Angle to aim point
+        aim_point_world = self._point_on_track(kart.distance_down_track + TRACK_OFFSET, track)
+        kart_direction = np.array(kart.front) - kart_location
+        aim_direction = np.array(aim_point_world) - kart_location
+        angle_to_aim_point = np.arccos(
+            np.clip(np.dot(kart_direction, aim_direction) / 
+                    (np.linalg.norm(kart_direction) * np.linalg.norm(aim_direction)), -1.0, 1.0)
+        )
+
+        return np.array([distance_to_center, velocity, angle_to_aim_point])
+
+
 
     def rollout(self, track, controller, planner=None, max_frames=1000, verbose=False, data_callback=None):
         """
@@ -148,6 +193,64 @@ class PyTux:
             self.k.step(action)
             t += 1
         return t, kart.overall_distance / track.length
+    
+    def rollout_rl(self, track, agent, max_frames=1000, reward_function=None, verbose=False):
+        """
+        Perform a rollout of a single episode for RL training.
+        """
+        if self.k is not None and self.k.config.track == track:
+            self.k.restart()
+            self.k.step()
+        else:
+            if self.k is not None:
+                self.k.stop()
+                del self.k
+            config = pystk.RaceConfig(num_kart=1, laps=1, track=track)
+            config.players[0].controller = pystk.PlayerConfig.Controller.PLAYER_CONTROL
+            self.k = pystk.Race(config)
+            self.k.start()
+            self.k.step()
+
+        state = pystk.WorldState()
+        state.update()
+        kart = state.players[0].kart
+        total_reward = 0
+
+        for t in range(max_frames):
+            state.update()
+            kart = state.players[0].kart
+
+            # Get the agent's decision
+            aim_point = agent.act(kart)
+
+            # Validate and normalize aim_point
+            if not isinstance(aim_point, (list, tuple, np.ndarray)) or len(aim_point) < 2:
+                raise ValueError(f"Invalid aim_point from agent: {aim_point}")
+
+            # Get current velocity
+            current_vel = np.linalg.norm(kart.velocity)
+
+            # Use the control function
+            action = control(aim_point, current_vel)
+
+            # Perform the action
+            self.k.step(action)
+
+            # Reward logic
+            if reward_function:
+                reward = reward_function(state, track)
+            else:
+                reward = kart.overall_distance / track.length
+            total_reward += reward
+
+            # Check termination
+            if np.isclose(kart.overall_distance / track.length, 1.0, atol=2e-3):
+                break
+
+        return total_reward
+
+
+
 
     def close(self):
         """

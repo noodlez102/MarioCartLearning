@@ -18,23 +18,30 @@ class Planner(torch.nn.Module):
 
         super().__init__()
         layers = []
-        layers.append(torch.nn.Conv2d(3, 16, 5, stride=2, padding=2))
-        layers.append(torch.nn.ReLU())
-        layers.append(torch.nn.MaxPool2d(kernel_size=2, stride=2))  
-        layers.append(torch.nn.Conv2d(16, 32, 3, stride=2, padding=1))
-        layers.append(torch.nn.ReLU())
-        layers.append(torch.nn.AvgPool2d(kernel_size=2, stride=2))  
-        layers.append(torch.nn.Conv2d(32, 64, 3, stride=2, padding=1))
-        layers.append(torch.nn.ReLU())
-        layers.append(torch.nn.MaxPool2d(kernel_size=2, stride=2))  
+        layers.append(torch.nn.Conv2d(3, 16, 5, stride=2, padding=2))  # Conv1
+        layers.append(torch.nn.ReLU())                                 # ReLU1
+        layers.append(torch.nn.BatchNorm2d(16))                        # BatchNorm1
+        layers.append(torch.nn.MaxPool2d(2, 2))                        # Max Pooling1
+
+        # Second Convolution Block
+        layers.append(torch.nn.Conv2d(16, 32, 3, stride=2, padding=1))  # Conv2
+        layers.append(torch.nn.ReLU())                                 # ReLU2
+        layers.append(torch.nn.BatchNorm2d(32))                        # BatchNorm2
+        layers.append(torch.nn.AvgPool2d(2, 2))                         # Avg Pooling1
+
+        # Third Convolution Block
+        layers.append(torch.nn.Conv2d(32, 64, 3, stride=2, padding=1))  # Conv3
+        layers.append(torch.nn.ReLU())                                 # ReLU3
+        layers.append(torch.nn.BatchNorm2d(64))                        # BatchNorm3
+        layers.append(torch.nn.MaxPool2d(2, 2))                        # Max Pooling2
 
         self._conv = torch.nn.Sequential(*layers)
 
         # Fully Connected Layers
         self._fc = torch.nn.Sequential(
-            torch.nn.Linear(64 * 1 * 2, 128),  # Adjust dimensions as needed
+            torch.nn.Linear(64 * 1 * 2, 128),  # Correct input size to 1024
             torch.nn.ReLU(),
-            torch.nn.Linear(128, 2)  # Predict (x, y) coordinates
+            torch.nn.Linear(128, 2)  # Predict 2D coordinates
         )
 
 
@@ -50,7 +57,7 @@ class Planner(torch.nn.Module):
 
         x = self._conv(img)
         # #print(img.shape)
-        # #print(x.shape)
+        # print(x.shape)
         x = torch.flatten(x, 1)
         return self._fc(x)
         # return spatial_argmax(x[:, 0])
