@@ -29,6 +29,8 @@ class SuperTuxDataset(Dataset):
         data = self.data[idx]
         data = self.transform(*data)
         return data
+    
+    
 
 
 def load_data(dataset_path=DATASET_PATH, transform=dense_transforms.ToTensor(), num_workers=0, batch_size=128):
