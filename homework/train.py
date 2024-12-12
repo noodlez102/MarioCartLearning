@@ -9,8 +9,8 @@ import random
 def train(args):
     from os import path
     device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
-    print("device:", device)
-    
+    print("Device:", device)
+
     # Initialize multiple agents
     num_agents = args.num_agents
     agents = [Planner().to(device) for _ in range(num_agents)]
@@ -25,46 +25,54 @@ def train(args):
     if args.log_dir is not None:
         train_logger = tb.SummaryWriter(path.join(args.log_dir, 'train'))
 
-    import inspect
     transform = eval(args.transform, {k: v for k, v in inspect.getmembers(dense_transforms) if inspect.isclass(v)})
     train_data = load_data('drive_data', transform=transform, num_workers=args.num_workers)
 
     global_step = 0
     for epoch in range(args.num_epoch):
-        losses = []
-        for img, label in train_data:
-            img, label = img.to(device), label.to(device)
+        epoch_losses = []
+        for batch_data in train_data:  # Assuming batch_data is compatible with multi-agent training
+            losses = []
+            gradients = []
 
-            # Each agent makes a prediction
-            preds = [agent(img) for agent in agents]
-            loss_vals = [loss_fn(pred, label) for pred in preds]
-
-            # Compute total loss (sum or average of all agent losses)
-            total_loss = sum(loss_vals)
-            
-            # Log the losses for each agent
-            if train_logger is not None:
-                for idx, loss_val in enumerate(loss_vals):
-                    train_logger.add_scalar(f'agent_{idx}_loss', loss_val, global_step)
-                if global_step % 100 == 0:
-                    log(train_logger, img, label, preds[0], global_step)
-
-            # Perform backward pass and optimizer step for each agent
-            for optimizer in optimizers:
+            for agent_idx, agent in enumerate(agents):
+                optimizer = optimizers[agent_idx]
                 optimizer.zero_grad()
-            total_loss.backward()
-            for optimizer in optimizers:
-                optimizer.step()
-            
-            global_step += 1
-            losses.append(total_loss.detach().cpu().numpy())
-        
-        avg_loss = np.mean(losses)
-        if train_logger is None:
-            print(f'epoch {epoch:3d} \t loss = {avg_loss:.3f}')
-        save_model(agents)
 
-    save_model(agents)
+                img, label = batch_data[agent_idx]
+                img, label = img.to(device), label.to(device)
+
+                pred = agent(img)
+                loss = loss_fn(pred, label)
+                losses.append(loss)
+
+                # Backpropagate to compute gradients
+                loss.backward(retain_graph=True)
+                gradients.append([param.grad.clone() for param in agent.parameters() if param.grad is not None])
+                optimizer.zero_grad()  
+
+            total_weight = sum(1 / (loss.item() + 1e-8) for loss in losses)
+            weights = [(1 / (loss.item() + 1e-8)) / total_weight for loss in losses]
+
+            shared_model = Planner().to(device)  
+            for param_idx, shared_param in enumerate(shared_model.parameters()):
+                if shared_param.grad is not None:
+                    shared_param.grad = sum(weights[agent_idx] * gradients[agent_idx][param_idx]
+                                            for agent_idx in range(num_agents))
+
+            shared_optimizer = torch.optim.Adam(shared_model.parameters(), lr=args.learning_rate)
+            shared_optimizer.step()
+
+            avg_loss = torch.mean(torch.tensor(losses))
+            epoch_losses.append(avg_loss.item())
+            if train_logger:
+                train_logger.add_scalar('loss', avg_loss.item(), global_step)
+
+            global_step += 1
+
+        print(f'Epoch {epoch + 1}/{args.num_epoch}, Avg Loss: {np.mean(epoch_losses)}')
+        save_model(shared_model)  
+
 
 def log(logger, img, label, pred, global_step):
     """
