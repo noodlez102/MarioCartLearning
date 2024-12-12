@@ -12,7 +12,7 @@ def train(args):
     print("Device:", device)
 
     # Initialize multiple agents
-    num_agents = args.num_agents
+    num_agents = 3
     agents = [Planner().to(device) for _ in range(num_agents)]
     optimizers = [torch.optim.Adam(agent.parameters(), lr=args.learning_rate) for agent in agents]
     loss_fn = torch.nn.L1Loss()
